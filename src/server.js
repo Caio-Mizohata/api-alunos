@@ -1,175 +1,53 @@
-const express = require('express');
+import app from "./app.js";
+import { createDatabase } from "./config/database.js";
 
-// Criando a aplicação Express
-const app = express();
+let server; // instancia do HTTP server
+let db;     // conexão ao SQLite (DatabaseSync)
 
-// Porta onde a API será executada
-const PORT = 3000;
-
-// Permite que a API receba dados no formato JSON
-app.use(express.json());
-
-
-// ==============================
-// DADOS DOS ALUNOS
-// ==============================
-
-let alunos = [
-    {
-        id: 1,
-        nome: "João Silva",
-        email: "joao@email.com",
-        curso: "Análise e Desenvolvimento de Sistemas",
-        idade: 20
-    },
-    {
-        id: 2,
-        nome: "Maria Souza",
-        email: "maria@email.com",
-        curso: "Big Data no Agronegócio",
-        idade: 21
-    },
-    {
-        id: 3,
-        nome: "Pedro Santos",
-        email: "pedro@email.com",
-        curso: "Big Data no Agronegócio",
-        idade: 19
-    }
-];
-
-
-// ==============================
-// GET - LISTAR TODOS OS ALUNOS
-// ==============================
-
-app.get('/alunos', (req, res) => {
-    res.status(200).json(alunos);
-});
-
-
-// ==============================
-// GET - BUSCAR ALUNO POR ID
-// ==============================
-
-app.get('/alunos/:id', (req, res) => {
-
-    const id = Number(req.params.id);
-
-    const aluno = alunos.find(aluno => aluno.id === id);
-
-    if (!aluno) {
-        return res.status(404).json({
-            mensagem: "Aluno não encontrado"
-        });
+// Método para encerrar o servidor e o banco de dados de forma controlada
+const gracefulShutdown = async (signal) => {
+  console.log(`\nRecebido ${signal} – encerrando aplicação…`);
+  try {
+    if (server) {
+      await new Promise((resolve, reject) => {
+        server.close((err) => (err ? reject(err) : resolve()));
+      });
+      console.log("Servidor HTTP fechado.");
     }
 
-    res.status(200).json(aluno);
-});
-
-
-// ==============================
-// POST - CADASTRAR NOVO ALUNO
-// ==============================
-
-app.post('/alunos', (req, res) => {
-
-    const { nome, email, curso, idade } = req.body;
-
-    // Validação simples
-    if (!nome || !email || !curso || !idade) {
-        return res.status(400).json({
-            mensagem: "Todos os campos são obrigatórios"
-        });
+    // Se o banco de dados estiver aberto, fecha a conexão
+    if (db) {
+      db.close();
+      console.log("Conexão ao banco de dados fechada.");
     }
 
-    const novoAluno = {
-        id: alunos.length > 0
-            ? Math.max(...alunos.map(aluno => aluno.id)) + 1
-            : 1,
+    // Encerra o processo
+    process.exit(0);
+  } catch (err) {
+    console.error("Erro durante o graceful shutdown:", err);
+    process.exit(1);
+  }
+};
 
-        nome,
-        email,
-        curso,
-        idade
-    };
+// Método para iniciar o servidor e o banco de dados
+const iniciarServidor = async () => {
+  const PORTA = 3000;
+  try {
+    // Cria o banco de dados
+    db = createDatabase();
 
-    alunos.push(novoAluno);
-
-    res.status(201).json({
-        mensagem: "Aluno cadastrado com sucesso",
-        aluno: novoAluno
+    // Inicia o servidor
+    server = app.listen(PORTA, () => {
+      console.log(`Aplicação rodando em http://localhost:${PORTA}`);
     });
-});
 
+    // Captura os sinais de término para encerramento controlado
+    process.on("SIGINT", () => gracefulShutdown("SIGINT"));
+    process.on("SIGTERM", () => gracefulShutdown("SIGTERM"));
+  } catch (error) {
+    console.error("Erro ao iniciar o servidor:", error);
+    process.exit(1);
+  }
+};
 
-// ==============================
-// PUT - ATUALIZAR ALUNO
-// ==============================
-
-app.put('/alunos/:id', (req, res) => {
-
-    const id = Number(req.params.id);
-
-    const aluno = alunos.find(aluno => aluno.id === id);
-
-    if (!aluno) {
-        return res.status(404).json({
-            mensagem: "Aluno não encontrado"
-        });
-    }
-
-    const { nome, email, curso, idade } = req.body;
-
-    if (!nome || !email || !curso || !idade) {
-        return res.status(400).json({
-            mensagem: "Todos os campos são obrigatórios"
-        });
-    }
-
-    aluno.nome = nome;
-    aluno.email = email;
-    aluno.curso = curso;
-    aluno.idade = idade;
-
-    res.status(200).json({
-        mensagem: "Aluno atualizado com sucesso",
-        aluno
-    });
-});
-
-
-// ==============================
-// DELETE - EXCLUIR ALUNO
-// ==============================
-
-app.delete('/alunos/:id', (req, res) => {
-
-    const id = Number(req.params.id);
-
-    const index = alunos.findIndex(aluno => aluno.id === id);
-
-    if (index === -1) {
-        return res.status(404).json({
-            mensagem: "Aluno não encontrado"
-        });
-    }
-
-    const alunoRemovido = alunos[index];
-
-    alunos.splice(index, 1);
-
-    res.status(200).json({
-        mensagem: "Aluno excluído com sucesso",
-        aluno: alunoRemovido
-    });
-});
-
-
-// ==============================
-// INICIAR SERVIDOR
-// ==============================
-
-app.listen(PORT, () => {
-    console.log(`API de Alunos rodando em http://localhost:${PORT}`);
-});
+iniciarServidor();
